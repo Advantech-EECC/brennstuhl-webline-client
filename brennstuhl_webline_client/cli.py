@@ -7,6 +7,8 @@ import logging
 import sys
 from typing import Any
 
+import yaml
+
 from .client import (
     DeviceResponseError,
     DeviceTransportError,
@@ -20,48 +22,13 @@ _DEFAULT_RELAY = 0
 _VALID_COMMANDS = {"on", "off", "status"}
 
 
-def _parse_config_value(raw_value: str) -> Any:
-    value = raw_value.strip()
-    if value == "":
-        return ""
-    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
-        value = value[1:-1]
-
-    lower = value.lower()
-    if lower in {"true", "yes", "on"}:
-        return True
-    if lower in {"false", "no", "off"}:
-        return False
-    if lower in {"null", "none"}:
-        return None
-
-    try:
-        return int(value)
-    except ValueError:
-        pass
-
-    try:
-        return float(value)
-    except ValueError:
-        pass
-
-    return value
-
-
 def _load_config(path: str) -> dict[str, Any]:
-    data: dict[str, Any] = {}
     with open(path, "r", encoding="utf-8") as config_file:
-        for line_number, raw_line in enumerate(config_file, start=1):
-            line = raw_line.strip()
-            if line == "" or line.startswith("#"):
-                continue
-            if ":" not in line:
-                raise ValueError(f"Invalid config line {line_number}: {raw_line.rstrip()!r}")
-            key, value = line.split(":", 1)
-            key = key.strip()
-            if key == "":
-                raise ValueError(f"Empty key on line {line_number}.")
-            data[key] = _parse_config_value(value)
+        data = yaml.safe_load(config_file)
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise ValueError("config must be a mapping/object at the top level")
     return data
 
 
@@ -105,7 +72,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--config",
-        help="Path to simple key:value config file (e.g. /etc/psu/psu.yaml).",
+        help="Path to YAML config file (e.g. /etc/psu/psu.yaml).",
         default=None,
     )
     parser.add_argument(
