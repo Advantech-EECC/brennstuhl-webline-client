@@ -37,7 +37,6 @@ class LineBasedSocketTransport:
     def send_command(self, command: str) -> str:
         payload = f"{command}{self.line_ending}".encode(self.encoding)
         with socket.create_connection((self.host, self.port), timeout=self.timeout_seconds) as conn:
-            conn.settimeout(self.timeout_seconds)
             conn.sendall(payload)
             response = conn.recv(self.receive_bytes)
         return response.decode(self.encoding, errors="replace").strip()
@@ -61,6 +60,6 @@ class PremiumWebLineV3Client:
 
     def _send(self, command: str) -> str:
         response = self.transport.send_command(command)
-        if not response:
+        if response == "":
             raise RuntimeError("Device returned an empty response.")
         return response
