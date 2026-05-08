@@ -7,6 +7,10 @@ import socket
 from typing import Protocol
 
 
+class DeviceResponseError(Exception):
+    """Raised when the device returns an unusable response."""
+
+
 class DeviceTransport(Protocol):
     """Transport contract used by the client to exchange commands."""
 
@@ -61,5 +65,5 @@ class PremiumWebLineV3Client:
     def _send(self, command: str) -> str:
         response = self.transport.send_command(command)
         if response == "":
-            raise RuntimeError("Device returned an empty response.")
+            raise DeviceResponseError("Device returned an empty response.")
         return response

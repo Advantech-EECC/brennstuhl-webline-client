@@ -1,6 +1,6 @@
 import unittest
 
-from brennstuhl_webline_client import CommandSet, PremiumWebLineV3Client
+from brennstuhl_webline_client import CommandSet, DeviceResponseError, PremiumWebLineV3Client
 
 
 class FakeTransport:
@@ -44,11 +44,11 @@ class PremiumWebLineV3ClientTests(unittest.TestCase):
         self.assertEqual("ON", response)
         self.assertEqual(["CMD_STATUS"], transport.sent_commands)
 
-    def test_empty_response_raises_runtime_error(self):
+    def test_empty_response_raises_device_response_error(self):
         transport = FakeTransport({"CMD_STATUS": ""})
         client = PremiumWebLineV3Client(transport=transport, commands=self.command_set)
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(DeviceResponseError):
             client.read_status()
 
 
