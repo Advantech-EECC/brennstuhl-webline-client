@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
+from typing import Any
 
 from .client import (
     DeviceResponseError,
@@ -13,6 +15,80 @@ from .client import (
 )
 
 _DEFAULT_PORT = 80
+_DEFAULT_TIMEOUT = 2.0
+_DEFAULT_RELAY = 0
+_VALID_COMMANDS = {"on", "off", "status"}
+
+
+def _parse_config_value(raw_value: str) -> Any:
+    value = raw_value.strip()
+    if value == "":
+        return ""
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        value = value[1:-1]
+
+    lower = value.lower()
+    if lower in {"true", "yes", "on"}:
+        return True
+    if lower in {"false", "no", "off"}:
+        return False
+    if lower in {"null", "none"}:
+        return None
+
+    try:
+        return int(value)
+    except ValueError:
+        pass
+
+    try:
+        return float(value)
+    except ValueError:
+        pass
+
+    return value
+
+
+def _load_config(path: str) -> dict[str, Any]:
+    data: dict[str, Any] = {}
+    with open(path, "r", encoding="utf-8") as config_file:
+        for line_number, raw_line in enumerate(config_file, start=1):
+            line = raw_line.strip()
+            if line == "" or line.startswith("#"):
+                continue
+            if ":" not in line:
+                raise ValueError(f"Invalid config line {line_number}: {raw_line.rstrip()!r}")
+            key, value = line.split(":", 1)
+            key = key.strip()
+            if key == "":
+                raise ValueError(f"Empty key on line {line_number}.")
+            data[key] = _parse_config_value(value)
+    return data
+
+
+def _coerce_int(value: Any, field_name: str) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid integer value for '{field_name}': {value!r}") from exc
+
+
+def _coerce_float(value: Any, field_name: str) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid numeric value for '{field_name}': {value!r}") from exc
+
+
+def _coerce_bool(value: Any, field_name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "yes", "on", "1"}:
+            return True
+        if lowered in {"false", "no", "off", "0"}:
+            return False
+    raise ValueError(f"Invalid boolean value for '{field_name}': {value!r}")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -20,19 +96,30 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="psu",
         description="Control a Brennstuhl Premium-Web-Line V3 power supply.",
     )
-    parser.add_argument("host", help="IP address or hostname of the device.")
+    parser.add_argument("host", nargs="?", help="IP address or hostname of the device.")
+    parser.add_argument(
+        "command",
+        nargs="?",
+        choices=sorted(_VALID_COMMANDS),
+        help="Device operation to execute.",
+    )
+    parser.add_argument(
+        "--config",
+        help="Path to YAML-style config file (e.g. /etc/psu/psu.yaml).",
+        default=None,
+    )
     parser.add_argument(
         "--port",
         type=int,
-        default=_DEFAULT_PORT,
+        default=None,
         help=f"TCP port to connect to (default: {_DEFAULT_PORT}).",
     )
     parser.add_argument(
         "--timeout",
         type=float,
-        default=2.0,
+        default=None,
         metavar="SECONDS",
-        help="Connection timeout in seconds (default: 2.0).",
+        help=f"Connection timeout in seconds (default: {_DEFAULT_TIMEOUT}).",
     )
     parser.add_argument("--username", help="Digest-auth username.", default=None)
     parser.add_argument("--password", help="Digest-auth password.", default=None)
@@ -40,16 +127,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--relay",
         type=int,
         choices=[0, 1],
-        default=0,
-        help="Relay index to control/read (default: 0).",
+        default=None,
+        help=f"Relay index to control/read (default: {_DEFAULT_RELAY}).",
     )
-
-    subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
-    subparsers.required = True
-
-    subparsers.add_parser("on", help="Turn the power supply on.")
-    subparsers.add_parser("off", help="Turn the power supply off.")
-    subparsers.add_parser("status", help="Read the current power supply status.")
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose/debug logging.",
+    )
 
     return parser
 
@@ -57,21 +142,74 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the ``psu`` CLI. Returns an exit code."""
     parser = _build_parser()
-    args = parser.parse_args(argv)
+    if hasattr(parser, "parse_intermixed_args"):
+        args = parser.parse_intermixed_args(argv)
+    else:
+        args = parser.parse_args(argv)
+    config: dict[str, Any] = {}
+    if args.config is not None:
+        try:
+            config = _load_config(args.config)
+        except (OSError, ValueError) as exc:
+            parser.error(f"failed to read config '{args.config}': {exc}")
 
-    transport = HttpCgiTransport(
-        host=args.host,
-        port=args.port,
-        timeout_seconds=args.timeout,
-        username=args.username,
-        password=args.password,
-    )
-    client = PremiumWebLineV3Client(transport=transport, relay=args.relay)
+    verbose = args.verbose
+    if not verbose and "verbose" in config:
+        try:
+            verbose = _coerce_bool(config["verbose"], "verbose")
+        except ValueError as exc:
+            parser.error(str(exc))
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG, format="%(levelname)s:%(name)s:%(message)s")
+
+    logger = logging.getLogger(__name__)
+    logger.debug("Loaded config file: %s", args.config if args.config else "<none>")
+
+    host = args.host if args.host is not None else config.get("host")
+    command = args.command if args.command is not None else config.get("command")
+    if host is None:
+        parser.error("host must be provided via CLI or config file.")
+    if command is None:
+        parser.error("command must be provided via CLI or config file.")
+    if command not in _VALID_COMMANDS:
+        parser.error(f"unsupported command: {command!r}; expected one of: on, off, status")
+
+    port = args.port if args.port is not None else config.get("port", _DEFAULT_PORT)
+    timeout = args.timeout if args.timeout is not None else config.get("timeout", _DEFAULT_TIMEOUT)
+    relay = args.relay if args.relay is not None else config.get("relay", _DEFAULT_RELAY)
+    username = args.username if args.username is not None else config.get("username")
+    password = args.password if args.password is not None else config.get("password")
 
     try:
-        if args.command == "on":
+        port = _coerce_int(port, "port")
+        timeout = _coerce_float(timeout, "timeout")
+        relay = _coerce_int(relay, "relay")
+    except ValueError as exc:
+        parser.error(str(exc))
+    if relay not in (0, 1):
+        parser.error("relay must be 0 or 1")
+
+    transport = HttpCgiTransport(
+        host=str(host),
+        port=port,
+        timeout_seconds=timeout,
+        username=None if username is None else str(username),
+        password=None if password is None else str(password),
+    )
+    client = PremiumWebLineV3Client(transport=transport, relay=relay)
+    logger.debug(
+        "Executing command=%s host=%s port=%s relay=%s auth=%s",
+        command,
+        host,
+        port,
+        relay,
+        "enabled" if username and password else "disabled",
+    )
+
+    try:
+        if command == "on":
             response = client.turn_on()
-        elif args.command == "off":
+        elif command == "off":
             response = client.turn_off()
         else:
             response = client.read_status()

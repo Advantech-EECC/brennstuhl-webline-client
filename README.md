@@ -27,13 +27,17 @@ pip install .
 ```
 
 ```
-psu <host> [--port PORT] [--timeout SECONDS] COMMAND
+psu [--config /etc/psu/psu.yaml] [<host>] [--port PORT] [--timeout SECONDS] [--verbose] [on|off|status]
 ```
 
 Optional auth/relay arguments:
 - `--username USER`
 - `--password PASSWORD`
 - `--relay {0,1}` (default: `0`)
+- `--verbose` (enable debug logging)
+- `--config /etc/psu/psu.yaml` (load defaults from YAML-style key/value file)
+
+Supported config keys: `host`, `command`, `port`, `timeout`, `username`, `password`, `relay`, `verbose`.
 
 | COMMAND  | Description                          |
 |----------|--------------------------------------|
@@ -52,6 +56,9 @@ psu 192.168.1.50 --username admin --password secret --relay 1 off
 
 # Read status with a 5-second timeout
 psu 192.168.1.50 --timeout 5.0 status
+
+# Use config file defaults (host/command/etc. can come from config)
+psu --config /etc/psu/psu.yaml
 ```
 
 Without installing, you can run the CLI directly with:
