@@ -1,12 +1,13 @@
 import logging
 import os
+from pathlib import Path
 import sys
 import tempfile
 import unittest
 from io import StringIO
 from unittest.mock import patch
 
-from brennstuhl_webline_client.cli import main
+from brennstuhl_webline_client.cli import _resolve_config_path, main
 
 
 class CliOnOffStatusTests(unittest.TestCase):
@@ -110,6 +111,35 @@ class CliOnOffStatusTests(unittest.TestCase):
             username=None,
             password=None,
         )
+
+    def test_default_config_lookup_prefers_local_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            local_config = Path(temp_dir) / "psu.yaml"
+            etc_config = Path(temp_dir) / "etc_psu.yaml"
+            local_config.write_text("host: 192.168.1.2\n", encoding="utf-8")
+            etc_config.write_text("host: 192.168.1.3\n", encoding="utf-8")
+            with patch("brennstuhl_webline_client.cli._DEFAULT_CONFIG_PATHS", (local_config, etc_config)):
+                resolved_path = _resolve_config_path(None)
+        self.assertEqual(str(local_config), resolved_path)
+
+    def test_default_config_lookup_falls_back_to_etc_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            local_config = Path(temp_dir) / "psu.yaml"
+            etc_config = Path(temp_dir) / "etc_psu.yaml"
+            etc_config.write_text("host: 192.168.1.3\n", encoding="utf-8")
+            with patch("brennstuhl_webline_client.cli._DEFAULT_CONFIG_PATHS", (local_config, etc_config)):
+                resolved_path = _resolve_config_path(None)
+        self.assertEqual(str(etc_config), resolved_path)
+
+    def test_default_config_is_used_when_explicit_option_is_missing(self):
+        with patch("brennstuhl_webline_client.cli._resolve_config_path", return_value="psu.yaml"), patch(
+            "brennstuhl_webline_client.cli._load_config",
+            return_value={"host": "192.168.1.55", "command": "status"},
+        ), patch("brennstuhl_webline_client.cli.PremiumWebLineV3Client.read_status", return_value="ON"), patch(
+            "sys.stdout", new_callable=StringIO
+        ):
+            exit_code = main([])
+        self.assertEqual(0, exit_code)
 
     def test_cli_values_override_config(self):
         config_path = self._temp_config_file(

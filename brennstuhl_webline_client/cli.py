@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from pathlib import Path
 from typing import Any
 
 import yaml
@@ -20,6 +21,7 @@ _DEFAULT_PORT = 80
 _DEFAULT_TIMEOUT = 2.0
 _DEFAULT_RELAY = 0
 _VALID_COMMANDS = {"on", "off", "status"}
+_DEFAULT_CONFIG_PATHS = (Path("psu.yaml"), Path("/etc/psu/psu.yaml"))
 
 
 def _load_config(path: str) -> dict[str, Any]:
@@ -30,6 +32,15 @@ def _load_config(path: str) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError("config must be a mapping/object at the top level")
     return data
+
+
+def _resolve_config_path(explicit_path: str | None) -> str | None:
+    if explicit_path is not None:
+        return explicit_path
+    for path in _DEFAULT_CONFIG_PATHS:
+        if path.is_file():
+            return str(path)
+    return None
 
 
 def _coerce_int(value: Any, field_name: str) -> int:
@@ -114,11 +125,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         args = parser.parse_args(argv)
     config: dict[str, Any] = {}
-    if args.config is not None:
+    config_path = _resolve_config_path(args.config)
+    if config_path is not None:
         try:
-            config = _load_config(args.config)
+            config = _load_config(config_path)
         except (OSError, ValueError) as exc:
-            parser.error(f"failed to read config '{args.config}': {exc}")
+            parser.error(f"failed to read config '{config_path}': {exc}")
 
     verbose = args.verbose
     if not verbose and "verbose" in config:
@@ -130,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
         logging.basicConfig(level=logging.DEBUG, format="%(levelname)s:%(name)s:%(message)s")
 
     logger = logging.getLogger(__name__)
-    logger.debug("Loaded config file: %s", args.config if args.config else "<none>")
+    logger.debug("Loaded config file: %s", config_path if config_path else "<none>")
 
     host = args.host if args.host is not None else config.get("host")
     command = args.command if args.command is not None else config.get("command")

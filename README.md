@@ -39,6 +39,23 @@ Optional auth/relay arguments:
 
 Supported config keys: `host`, `command`, `port`, `timeout`, `username`, `password`, `relay`, `verbose`.
 
+If `--config` is not provided, `psu` will automatically look for config files in this order:
+1. `./psu.yaml`
+2. `/etc/psu/psu.yaml`
+
+Example `psu.yaml`:
+
+```yaml
+host: 192.168.1.50
+command: status
+port: 80
+timeout: 2.0
+username: admin
+password: secret
+relay: 0
+verbose: false
+```
+
 | COMMAND  | Description                          |
 |----------|--------------------------------------|
 | `on`     | Turn selected relay on               |
@@ -59,6 +76,9 @@ psu 192.168.1.50 --timeout 5.0 status
 
 # Use config file defaults (host/command/etc. can come from config)
 psu --config /etc/psu/psu.yaml
+
+# Use auto-discovered config from ./psu.yaml or /etc/psu/psu.yaml
+psu
 ```
 
 Without installing, you can run the CLI directly with:
