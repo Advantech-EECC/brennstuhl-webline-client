@@ -29,7 +29,11 @@ class CommandSet:
 
 @dataclass
 class LineBasedSocketTransport:
-    """Simple line-based TCP transport."""
+    """Simple line-based TCP transport.
+
+    The default line ending is CRLF because many embedded line-based protocols
+    expect it. It can be overridden per device firmware if needed.
+    """
 
     host: str
     port: int
@@ -40,6 +44,7 @@ class LineBasedSocketTransport:
 
     def send_command(self, command: str) -> str:
         payload = f"{command}{self.line_ending}".encode(self.encoding)
+        # Opens one connection per command for simplicity and reliability.
         with socket.create_connection((self.host, self.port), timeout=self.timeout_seconds) as conn:
             conn.sendall(payload)
             response = conn.recv(self.receive_bytes)

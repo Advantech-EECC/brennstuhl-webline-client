@@ -51,6 +51,20 @@ class PremiumWebLineV3ClientTests(unittest.TestCase):
         with self.assertRaises(DeviceResponseError):
             client.read_status()
 
+    def test_empty_response_raises_device_response_error_for_turn_on(self):
+        transport = FakeTransport({"CMD_ON": ""})
+        client = PremiumWebLineV3Client(transport=transport, commands=self.command_set)
+
+        with self.assertRaises(DeviceResponseError):
+            client.turn_on()
+
+    def test_empty_response_raises_device_response_error_for_turn_off(self):
+        transport = FakeTransport({"CMD_OFF": ""})
+        client = PremiumWebLineV3Client(transport=transport, commands=self.command_set)
+
+        with self.assertRaises(DeviceResponseError):
+            client.turn_off()
+
 
 if __name__ == "__main__":
     unittest.main()
