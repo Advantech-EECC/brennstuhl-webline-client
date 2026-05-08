@@ -11,6 +11,10 @@ class DeviceResponseError(Exception):
     """Raised when the device returns an unusable response."""
 
 
+class DeviceTransportError(Exception):
+    """Raised when transport-level communication with the device fails."""
+
+
 class DeviceTransport(Protocol):
     """Transport contract used by the client to exchange commands."""
 
@@ -44,10 +48,16 @@ class LineBasedSocketTransport:
 
     def send_command(self, command: str) -> str:
         payload = f"{command}{self.line_ending}".encode(self.encoding)
-        # Opens one connection per command for simplicity and reliability.
-        with socket.create_connection((self.host, self.port), timeout=self.timeout_seconds) as conn:
-            conn.sendall(payload)
-            response = conn.recv(self.receive_bytes)
+        try:
+            # Opens one connection per command for simplicity and reliability.
+            with socket.create_connection((self.host, self.port), timeout=self.timeout_seconds) as conn:
+                conn.sendall(payload)
+                with conn.makefile("rb") as reader:
+                    response = reader.readline(self.receive_bytes)
+        except OSError as exc:
+            raise DeviceTransportError(
+                f"Failed to send command to device at {self.host}:{self.port}."
+            ) from exc
         return response.decode(self.encoding, errors="replace").strip()
 
 

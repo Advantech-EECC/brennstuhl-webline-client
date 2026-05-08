@@ -1,6 +1,13 @@
 import unittest
+from unittest.mock import patch
 
-from brennstuhl_webline_client import CommandSet, DeviceResponseError, PremiumWebLineV3Client
+from brennstuhl_webline_client import (
+    CommandSet,
+    DeviceResponseError,
+    DeviceTransportError,
+    LineBasedSocketTransport,
+    PremiumWebLineV3Client,
+)
 
 
 class FakeTransport:
@@ -64,6 +71,15 @@ class PremiumWebLineV3ClientTests(unittest.TestCase):
 
         with self.assertRaises(DeviceResponseError):
             client.turn_off()
+
+
+class LineBasedSocketTransportTests(unittest.TestCase):
+    @patch("brennstuhl_webline_client.client.socket.create_connection", side_effect=OSError("boom"))
+    def test_send_command_wraps_oserror_as_device_transport_error(self, _):
+        transport = LineBasedSocketTransport(host="127.0.0.1", port=1234)
+
+        with self.assertRaises(DeviceTransportError):
+            transport.send_command("STATUS")
 
 
 if __name__ == "__main__":

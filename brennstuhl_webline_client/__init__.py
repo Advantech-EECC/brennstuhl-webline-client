@@ -3,6 +3,7 @@
 from .client import (
     CommandSet,
     DeviceResponseError,
+    DeviceTransportError,
     DeviceTransport,
     LineBasedSocketTransport,
     PremiumWebLineV3Client,
@@ -11,6 +12,7 @@ from .client import (
 __all__ = [
     "CommandSet",
     "DeviceResponseError",
+    "DeviceTransportError",
     "DeviceTransport",
     "LineBasedSocketTransport",
     "PremiumWebLineV3Client",
