@@ -1,10 +1,13 @@
-"""Low-level client scaffolding for Premium-Web-Line V3 control."""
+"""HTTP CGI client for Brennstuhl Premium-Web-Line V3 control."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-import socket
+import re
 from typing import Protocol
+import urllib.error
+import urllib.parse
+import urllib.request
 
 
 class DeviceResponseError(Exception):
@@ -16,69 +19,139 @@ class DeviceTransportError(Exception):
 
 
 class DeviceTransport(Protocol):
-    """Transport contract used by the client to exchange commands."""
+    """Transport contract used by the client to exchange CGI requests."""
 
-    def send_command(self, command: str) -> str:
-        """Send a single device command and return the raw response."""
+    def get(self, path: str, params: dict[str, str] | None = None) -> str:
+        """Issue a GET request and return the raw response."""
 
-
-@dataclass(frozen=True)
-class CommandSet:
-    """Configurable command profile for a given firmware/protocol mapping."""
-
-    power_on: str
-    power_off: str
-    status: str
+    def post(self, path: str, data: dict[str, str]) -> str:
+        """Issue a POST request and return the raw response."""
 
 
 @dataclass
-class LineBasedSocketTransport:
-    """Simple line-based TCP transport.
-
-    The default line ending is CRLF because many embedded line-based protocols
-    expect it. It can be overridden per device firmware if needed.
-    """
+class HttpCgiTransport:
+    """HTTP transport aligned with device CGI endpoints."""
 
     host: str
-    port: int
+    port: int = 80
     timeout_seconds: float = 2.0
-    encoding: str = "ascii"
-    line_ending: str = "\r\n"
-    receive_bytes: int = 4096
+    username: str | None = None
+    password: str | None = None
+    encoding: str = "utf-8"
+    _opener: urllib.request.OpenerDirector | None = None
 
-    def send_command(self, command: str) -> str:
-        payload = f"{command}{self.line_ending}".encode(self.encoding)
+    def get(self, path: str, params: dict[str, str] | None = None) -> str:
+        query = urllib.parse.urlencode(params or {})
+        suffix = f"?{query}" if query else ""
+        url = self._build_url(path + suffix)
+        request = urllib.request.Request(url=url, method="GET")
+        return self._execute(request)
+
+    def post(self, path: str, data: dict[str, str]) -> str:
+        url = self._build_url(path)
+        encoded_data = urllib.parse.urlencode(data).encode(self.encoding)
+        request = urllib.request.Request(url=url, data=encoded_data, method="POST")
+        return self._execute(request)
+
+    def _execute(self, request: urllib.request.Request) -> str:
+        opener = self._get_opener()
         try:
-            # Opens one connection per command for simplicity and reliability.
-            with socket.create_connection((self.host, self.port), timeout=self.timeout_seconds) as conn:
-                conn.sendall(payload)
-                with conn.makefile("rb") as reader:
-                    response = reader.readline(self.receive_bytes)
-        except OSError as exc:
+            with opener.open(request, timeout=self.timeout_seconds) as response:
+                body = response.read()
+        except (OSError, urllib.error.HTTPError, urllib.error.URLError) as exc:
             raise DeviceTransportError(
-                f"Failed to send command to device at {self.host}:{self.port}."
+                f"Failed request to device at {self.host}:{self.port}."
             ) from exc
-        return response.decode(self.encoding, errors="replace").strip()
+        return body.decode(self.encoding, errors="replace").strip()
+
+    def _build_url(self, path: str) -> str:
+        trimmed = path.lstrip("/")
+        return f"http://{self.host}:{self.port}/{trimmed}"
+
+    def _get_opener(self) -> urllib.request.OpenerDirector:
+        if self._opener is not None:
+            return self._opener
+
+        handlers: list[urllib.request.BaseHandler] = []
+        if self.username and self.password:
+            password_mgr = urllib.request.HTTPPasswordMgrWithDefaultRealm()
+            password_mgr.add_password(
+                realm=None,
+                uri=f"http://{self.host}:{self.port}/",
+                user=self.username,
+                passwd=self.password,
+            )
+            digest_handler = urllib.request.HTTPDigestAuthHandler(password_mgr)
+            handlers.append(digest_handler)
+
+        self._opener = urllib.request.build_opener(*handlers)
+        return self._opener
 
 
 @dataclass
 class PremiumWebLineV3Client:
-    """High-level control client that does not depend on web pages."""
+    """High-level client aligned with Web-Line CGI endpoints."""
 
     transport: DeviceTransport
-    commands: CommandSet
+    relay: int = 0
+
+    def __post_init__(self) -> None:
+        self._validate_relay(self.relay)
 
     def turn_on(self) -> str:
-        return self._send(self.commands.power_on)
+        return self.set_relay_state(self.relay, 1)
 
     def turn_off(self) -> str:
-        return self._send(self.commands.power_off)
+        return self.set_relay_state(self.relay, 0)
+
+    def toggle(self) -> str:
+        response = self.transport.get("cgi/toggleRelay", {"Rel": str(self.relay)})
+        return self._ensure_non_empty(response)
 
     def read_status(self) -> str:
-        return self._send(self.commands.status)
+        states = self.get_relay_states()
+        return "ON" if states[self.relay] == 1 else "OFF"
 
-    def _send(self, command: str) -> str:
-        response = self.transport.send_command(command)
+    def set_relay_state(self, relay: int, state: int) -> str:
+        self._validate_relay(relay)
+        self._validate_state(state)
+        response = self.transport.get("cgi/setRelay", {"Rel": str(relay), "State": str(state)})
+        return self._ensure_non_empty(response)
+
+    def get_relay_states(self) -> tuple[int, int]:
+        response = self.transport.get("cgi/getRelays")
+        body = self._ensure_non_empty(response)
+        states = re.findall(r"[01]", body)
+        if len(states) < 2:
+            raise DeviceResponseError(f"Unexpected relay state response: {body!r}")
+        return int(states[0]), int(states[1])
+
+    def get_information(self, panel: str) -> str:
+        response = self.transport.post("cgi/getJsonData", {"json": "on", "panel": panel})
+        return self._ensure_non_empty(response)
+
+    def get_state_information(self) -> str:
+        return self.get_information("bsState")
+
+    def get_header_information(self) -> str:
+        return self.get_information("bsHeader")
+
+    @staticmethod
+    def _ensure_non_empty(response: str) -> str:
         if response == "":
             raise DeviceResponseError("Device returned an empty response.")
         return response
+
+    @staticmethod
+    def _validate_relay(relay: int) -> None:
+        if relay not in (0, 1):
+            raise ValueError("relay must be 0 or 1")
+
+    @staticmethod
+    def _validate_state(state: int) -> None:
+        if state not in (0, 1):
+            raise ValueError("state must be 0 or 1")
+
+
+# Backwards-compatible alias with previous scaffold name.
+LineBasedSocketTransport = HttpCgiTransport

@@ -35,16 +35,41 @@ class CliOnOffStatusTests(unittest.TestCase):
         mock_method.assert_called_once()
 
     def test_custom_port_and_timeout_are_passed_to_transport(self):
-        with patch("brennstuhl_webline_client.cli.LineBasedSocketTransport") as mock_transport_cls, \
+        with patch("brennstuhl_webline_client.cli.HttpCgiTransport") as mock_transport_cls, \
              patch("brennstuhl_webline_client.cli.PremiumWebLineV3Client.read_status", return_value="ON"):
             mock_transport_cls.return_value = mock_transport_cls
-            main(["192.168.1.2", "--port", "1234", "--timeout", "5.0", "status"])
+            main(
+                [
+                    "192.168.1.2",
+                    "--port",
+                    "1234",
+                    "--timeout",
+                    "5.0",
+                    "--username",
+                    "user",
+                    "--password",
+                    "pass",
+                    "status",
+                ]
+            )
 
         mock_transport_cls.assert_called_once_with(
             host="192.168.1.2",
             port=1234,
             timeout_seconds=5.0,
+            username="user",
+            password="pass",
         )
+
+    def test_relay_argument_is_forwarded_to_client(self):
+        with patch("brennstuhl_webline_client.cli.PremiumWebLineV3Client") as mock_client_cls:
+            mock_client = mock_client_cls.return_value
+            mock_client.read_status.return_value = "OFF"
+            with patch("sys.stdout", new_callable=StringIO):
+                main(["192.168.1.2", "--relay", "1", "status"])
+
+        mock_client_cls.assert_called_once()
+        self.assertEqual(1, mock_client_cls.call_args.kwargs["relay"])
 
     def test_transport_error_prints_to_stderr_and_returns_1(self):
         from brennstuhl_webline_client import DeviceTransportError

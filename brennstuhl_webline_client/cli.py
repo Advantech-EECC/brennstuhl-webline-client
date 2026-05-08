@@ -6,22 +6,13 @@ import argparse
 import sys
 
 from .client import (
-    CommandSet,
     DeviceResponseError,
     DeviceTransportError,
-    LineBasedSocketTransport,
+    HttpCgiTransport,
     PremiumWebLineV3Client,
 )
 
-# Default command strings — replace with real firmware commands after protocol
-# capture (see README implementation plan).
-_DEFAULT_COMMANDS = CommandSet(
-    power_on="PWR ON",
-    power_off="PWR OFF",
-    status="PWR STATUS",
-)
-
-_DEFAULT_PORT = 23
+_DEFAULT_PORT = 80
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -43,6 +34,15 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="SECONDS",
         help="Connection timeout in seconds (default: 2.0).",
     )
+    parser.add_argument("--username", help="Digest-auth username.", default=None)
+    parser.add_argument("--password", help="Digest-auth password.", default=None)
+    parser.add_argument(
+        "--relay",
+        type=int,
+        choices=[0, 1],
+        default=0,
+        help="Relay index to control/read (default: 0).",
+    )
 
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
     subparsers.required = True
@@ -59,12 +59,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    transport = LineBasedSocketTransport(
+    transport = HttpCgiTransport(
         host=args.host,
         port=args.port,
         timeout_seconds=args.timeout,
+        username=args.username,
+        password=args.password,
     )
-    client = PremiumWebLineV3Client(transport=transport, commands=_DEFAULT_COMMANDS)
+    client = PremiumWebLineV3Client(transport=transport, relay=args.relay)
 
     try:
         if args.command == "on":
