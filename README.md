@@ -33,5 +33,43 @@ This repository now includes a minimal module scaffold that already supports:
 - transport abstraction (`DeviceTransport`)
 - configurable command set (`CommandSet`)
 - high-level client (`PremiumWebLineV3Client`)
+- `psu` command-line interface
 
 After protocol capture, you only need to plug in the real command strings and any auth handshake logic.
+
+## CLI usage (`psu`)
+
+Install the package and the `psu` entry point is registered automatically:
+
+```bash
+pip install .
+```
+
+```
+psu <host> [--port PORT] [--timeout SECONDS] COMMAND
+```
+
+| COMMAND  | Description                          |
+|----------|--------------------------------------|
+| `on`     | Turn the power supply on             |
+| `off`    | Turn the power supply off            |
+| `status` | Read the current power supply status |
+
+**Examples:**
+
+```bash
+# Turn on device at 192.168.1.50 (default port 23)
+psu 192.168.1.50 on
+
+# Turn off with a custom port
+psu 192.168.1.50 --port 1234 off
+
+# Read status with a 5-second timeout
+psu 192.168.1.50 --timeout 5.0 status
+```
+
+Without installing, you can run the CLI directly with:
+
+```bash
+python -m brennstuhl_webline_client 192.168.1.50 on
+```
