@@ -105,7 +105,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--config",
-        help="Path to YAML-style config file (e.g. /etc/psu/psu.yaml).",
+        help="Path to simple key:value config file (e.g. /etc/psu/psu.yaml).",
         default=None,
     )
     parser.add_argument(

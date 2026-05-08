@@ -15,7 +15,7 @@ class CliOnOffStatusTests(unittest.TestCase):
         os.close(fd)
         with open(path, "w", encoding="utf-8") as file:
             file.write(content)
-        self.addCleanup(lambda: os.path.exists(path) and os.unlink(path))
+        self.addCleanup(lambda: os.unlink(path) if os.path.exists(path) else None)
         return path
 
     def _run(self, argv, client_method, device_response="OK"):

@@ -35,7 +35,7 @@ Optional auth/relay arguments:
 - `--password PASSWORD`
 - `--relay {0,1}` (default: `0`)
 - `--verbose` (enable debug logging)
-- `--config /etc/psu/psu.yaml` (load defaults from YAML-style key/value file)
+- `--config /etc/psu/psu.yaml` (load defaults from a simple key:value config file)
 
 Supported config keys: `host`, `command`, `port`, `timeout`, `username`, `password`, `relay`, `verbose`.
 
