@@ -75,7 +75,8 @@ class PremiumWebLineV3ClientTests(unittest.TestCase):
 
 class LineBasedSocketTransportTests(unittest.TestCase):
     @patch("brennstuhl_webline_client.client.socket.create_connection", side_effect=OSError("boom"))
-    def test_send_command_wraps_oserror_as_device_transport_error(self, _):
+    def test_send_command_wraps_oserror_as_device_transport_error(self, mock_create_connection):
+        self.assertIsNotNone(mock_create_connection)
         transport = LineBasedSocketTransport(host="127.0.0.1", port=1234)
 
         with self.assertRaises(DeviceTransportError):
